@@ -1,3 +1,4 @@
+const { default: OpenAI } = require("openai");
 const MessageModel = require("../models/Message");
 const { publishMessage } = require("../utils/mqttconnection");
 
@@ -14,7 +15,7 @@ exports.SaveMessage = async (req, res) => {
       .sort({ date: -1 })
       .select("content role -_id");
 
-    const formattedMessages = lastTenMessages.reverse();
+    const formattedMessages = lastTenMessages;
     AiFunction(formattedMessages);
 
     console.log(newMessage);
@@ -36,7 +37,7 @@ exports.getMessage = async (req, res) => {
 const baseSystemPrompt = {
   role: "system",
   content: `
-You are a virtual assistant specialized in helping users navigate and maximize their experience with the BNI Connect platform. Your role is to guide members through account setup, profile completion, and provide expert advice on business networking and growth.
+You are **BNI Gurudas**, a virtual assistant dedicated to helping users navigate and maximize their experience with the **BNI Connect** platform. Your role is to guide BNI members through account setup, profile completion, and provide expert advice on business networking and growth.
 
 Your tone should always be professional, friendly, and supportive.
 
@@ -73,53 +74,40 @@ Your key responsibilities include:
    - If a user types "exit", reset the conversation and ask how you can help next.
 
 Respond in clear, helpful, and concise language. Always aim to add value and guide the user step-by-step.
-  `,
+`
 };
 
+
+
+
 const AiFunction = async (lastMessages) => {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
   try {
-    // Add the system prompt at the start and append the last user messages
     const messagesToSend = [baseSystemPrompt, ...lastMessages];
-    // console.log(messagesToSend);
-    // Log for debugging
-    console.log("Sending to AI:", messagesToSend);
+    console.log(messagesToSend);
+    const chatCompletion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: messagesToSend,
+    });
 
-    // Send the request to the API
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "meta-llama/llama-3-8b-instruct", // Ensure you're using the correct model
-          messages: messagesToSend,
-        }),
-      }
-    );
+    const messageContent = chatCompletion.choices[0].message.content;
 
-    // Get the response data from the API
-    const data = await response.json();
-
-    // Check if the response contains a valid message
-    if (data?.choices?.[0]?.message?.content) {
-      const messageContent = data.choices[0].message.content;
-
-      // Save the message content to your database (optional)
+    if (messageContent) {
+      // Save to DB (optional)
       const newMessage = await MessageModel.create({
         content: JSON.stringify(messageContent),
         role: "assistant",
       });
 
-      // Publish the assistant's response to your channel (optional)
+      // Publish to frontend (optional)
       publishMessage("chat/user_ai/message", JSON.stringify(messageContent));
 
-      // Return the AI's response
       return messageContent;
     } else {
-      console.error("AI response error:", data);
+      console.error("AI response is missing content:", chatCompletion);
       return "AI did not return a valid message.";
     }
   } catch (error) {
@@ -127,3 +115,4 @@ const AiFunction = async (lastMessages) => {
     return "Error communicating with AI.";
   }
 };
+
