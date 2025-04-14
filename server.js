@@ -7,7 +7,11 @@ const { connectMQTT } = require("./utils/mqttconnection");
 const app = express();
 // middlewares
 
-app.use(cors());
+app.use(cors({
+    origin: 'https://astounding-stroopwafel-af9c19.netlify.app',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
+  }));
 app.use(express.json());
 app.use("/api",messageRouter);
 // connectdb
